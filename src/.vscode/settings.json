@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "switch.h": "c",
+        "arraylist.h": "c",
+        "mongo.h": "c",
+        "stddef.h": "c",
+        "*.tcc": "c",
+        "cstdlib": "c",
+        "memory": "c"
+    }
+}
