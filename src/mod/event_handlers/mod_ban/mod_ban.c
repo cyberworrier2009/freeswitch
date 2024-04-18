@@ -69,6 +69,7 @@ static void event_handler_ip(switch_event_t *event)
 										  "Registration failure for user %s from network ip %s\n", name, ip);
 						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Banning ip %s\n", ip);
 						snprintf(command, sizeof(command), "iptables -A INPUT -s %s -j DROP", ip);
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Executing command: %s\n", command);
 						system(command);
 					}
 				}
