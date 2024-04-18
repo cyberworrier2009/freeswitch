@@ -30,16 +30,14 @@ static void event_handler_ip(switch_event_t *event)
 	// Early return if event is NULL
 	if (event == NULL) { return; }
 
-	
-
 	// Check if event is custom and has a subclass name
 	if (event->event_id == SWITCH_EVENT_CUSTOM && event->subclass_name) {
 		char *name = switch_event_get_header(event, "to-user");
 		char *ip = switch_event_get_header(event, "network-ip");
-		
+
 		if (strncmp(event->subclass_name, "sofia::register_failure", 23) == 0) {
 			if (bad_ip_list == NULL) {
-				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "adding items to bad list\n");
+				switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "adding ip \"%s\" to bad list\n", ip);
 				add_bad_ip(ip);
 			} else {
 				struct bad_ip_information *info = NULL;
@@ -75,10 +73,21 @@ static void event_handler_ip(switch_event_t *event)
 					}
 				}
 			}
+		} else if (strncmp(event->subclass_name, "sofia::register", 23) == 0) {
+			struct bad_ip_information *info = NULL;
+			if (bad_ip_list != NULL) {
+				for (int i = 0; i < bad_ip_list->size; i++) {
+					info = arraylist_get(bad_ip_list, i);
+					if (info != NULL && strcmp(info->ip, ip) == 0) {
+						arraylist_remove(bad_ip_list, i);
+						switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+										  "Removed ip \"%s\" from bad attempt list\n", ip);
+					}
+				}
+			}
 		}
 	}
 }
-
 SWITCH_STANDARD_API(ban)
 {
 	switch_event_bind("mod_ban", SWITCH_EVENT_CUSTOM, SWITCH_EVENT_SUBCLASS_ANY, event_handler_ip, NULL);
