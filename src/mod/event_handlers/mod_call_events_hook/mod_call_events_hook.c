@@ -7,18 +7,6 @@ SWITCH_MODULE_DEFINITION(mod_call_events_hook, mod_call_events_hook_load, mod_ca
 
 static switch_event_node_t *event_node = NULL;
 
-/*static void event_handler(switch_event_t *event){
-    //const *domain = switch_event_get_header(event,"variable_domain_name");
-     if (switch_event_get_header(event,"Event-Name")){
-        if(!strcmp(switch_event_get_header(event,"Event-Name"), "CHANNEL_ANSWER")){
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Call answer for domain");
-        }
-        else if(!strcmp(switch_event_get_header(event,"Event-Name"), "CHANNEL_HANGUP")){
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Call hangup for domain");
-
-        }
-    }
-}*/
 // Helper function to send POST data using libcurl
 static void send_event_data(const char *event_name, const char *domain_name) {
     CURL *curl = curl_easy_init();
