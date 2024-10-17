@@ -1,38 +1,66 @@
 #include <switch.h>
 #include <curl/curl.h>
+#include <cjson/cJSON.h>
 
 SWITCH_MODULE_LOAD_FUNCTION(mod_call_events_hook_load);
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_call_events_hook_shutdown);
 SWITCH_MODULE_DEFINITION(mod_call_events_hook, mod_call_events_hook_load, mod_call_events_hook_shutdown, NULL);
 
 static switch_event_node_t *event_node = NULL;
+typedef struct call_event_info {
+    char* event;
+    char* domain;
+    char* destination_number;
+    char* call_direction;
+} call_event_info_t;
 
-// Helper function to send POST data using libcurl
-static void send_event_data(const char *event_name, const char *domain_name) {
+static void free_call_event_info(call_event_info_t *info) {
+    if (info) {
+        switch_safe_free(info->event);
+        switch_safe_free(info->domain);
+        switch_safe_free(info->destination_number);
+        switch_safe_free(info->call_direction);
+        switch_safe_free(info);
+    }
+}
+
+char *convert_to_json(call_event_info_t *obj) {
+    char *json_string = NULL;
+    cJSON *root = cJSON_CreateObject();
+    cJSON *data = cJSON_CreateObject();
+    if (root) {
+        cJSON_AddStringToObject(root, "name", obj->event);
+                cJSON_AddStringToObject(data, "domain", obj->domain ? obj->domain : "");
+        cJSON_AddStringToObject(data, "event", obj->event ? obj->event : "");
+        cJSON_AddStringToObject(data, "destination_number", obj->destination_number ? obj->destination_number : "");
+        cJSON_AddStringToObject(data, "direction", obj->call_direction ? obj->call_direction : "");
+        cJSON_AddItemToObject(root, "data", data);
+        json_string = cJSON_Print(root);
+        cJSON_Delete(root);
+    }
+    return json_string;
+}
+
+static void send_event_data(call_event_info_t *data) {
     CURL *curl = curl_easy_init();
     if (curl) {
-        CURLcode res;
-        const char *url = "http://localhost:8080/message?token=A35sWku4nvbqVdm";  // Replace with your actual endpoint
+        char *post_body = convert_to_json(data);
+        if (post_body) {
+            CURLcode res;
+            const char *url = "http://localhost:8080/event";  // Replace with your actual endpoint
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "post body: %s", post_body);
 
-        // Prepare POST data
-        char post_data[256];
-        snprintf(post_data, sizeof(post_data), "title=%s&message=%s", event_name, domain_name);
+            curl_easy_setopt(curl, CURLOPT_URL, url);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_body);
+            res = curl_easy_perform(curl);
+                        if (res != CURLE_OK) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+                                  "curl_easy_perform() failed: %s\n",
+                                  curl_easy_strerror(res));
+            }
 
-        // Set CURL options
-        curl_easy_setopt(curl, CURLOPT_URL, url);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
-
-        // Perform the request
-        res = curl_easy_perform(curl);
-
-        // Check for errors
-        if (res != CURLE_OK) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-                              "curl_easy_perform() failed: %s\n",
-                              curl_easy_strerror(res));
+            free(post_body);
         }
-
-        // Cleanup
         curl_easy_cleanup(curl);
     } else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
@@ -45,29 +73,37 @@ static void event_handler(switch_event_t *event) {
 
     if (event_name) {
         const char *domain_name = switch_event_get_header(event, "variable_domain_name");
+        const char *call_direction = switch_event_get_header(event, "variable_direction");
+        const char *callee_number = switch_event_get_header(event, "Caller-Destination-Number");
+
         if (!domain_name) {
-            domain_name = "unknown";  // Default value if domain name is not available
+            domain_name = "unknown";
         }
 
-        if (strcmp(event_name, "CHANNEL_ANSWER") == 0) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-                              "Call answered for domain %s\n", domain_name);
+        if (strcmp(event_name, "CHANNEL_ANSWER") == 0 ||
+            strcmp(event_name, "CHANNEL_HANGUP") == 0 ||
+            strcmp(event_name, "CHANNEL_CREATE") == 0 ||
+            (strcmp(event_name, "CHANNEL_CALLSTATE") == 0 &&
+             !strcmp(switch_event_get_header(event, "Channel-Call-State"), "RINGING"))) {
+            
+            call_event_info_t *call_info = (call_event_info_t*) malloc(sizeof(call_event_info_t));
+            if (call_info) {
+                call_info->domain = switch_safe_strdup(domain_name);
+                call_info->destination_number = switch_safe_strdup(callee_number);
+                call_info->event = switch_safe_strdup(event_name);
+                call_info->call_direction = switch_safe_strdup(call_direction);
 
-            // Send data using the helper function
-            send_event_data(event_name, domain_name);
-        } else if (strcmp(event_name, "CHANNEL_HANGUP") == 0) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-                              "Call hangup for domain %s\n", domain_name);
-
-            // Send data using the helper function
-            send_event_data(event_name, domain_name);
+                send_event_data(call_info);
+                free_call_event_info(call_info);
+            } else {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for call_info\n");
+            }
         }
     }
 }
 
-SWITCH_STANDARD_API(mod_call_events_hook_start_function){
-
-if (zstr(cmd)) {
+SWITCH_STANDARD_API(mod_call_events_hook_start_function) {
+    if (zstr(cmd)) {
         stream->write_function(stream, "-ERR Invalid Input\n");
         return SWITCH_STATUS_SUCCESS;
     }
@@ -97,9 +133,8 @@ if (zstr(cmd)) {
     return SWITCH_STATUS_SUCCESS;
 }
 
-SWITCH_MODULE_LOAD_FUNCTION(mod_call_events_hook_load){
-  
-switch_api_interface_t *api_interface;
+SWITCH_MODULE_LOAD_FUNCTION(mod_call_events_hook_load) {
+    switch_api_interface_t *api_interface;
     *module_interface = switch_loadable_module_create_module_interface(pool, modname);
 
     SWITCH_ADD_API(api_interface, "call_event_hooks", "Domain specific event hooks", mod_call_events_hook_start_function, "<start>|<stop>");
@@ -107,8 +142,8 @@ switch_api_interface_t *api_interface;
     return SWITCH_STATUS_SUCCESS;
 }
 
-SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_call_events_hook_shutdown){
-   if(event_node != NULL){
+SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_call_events_hook_shutdown) {
+    if (event_node != NULL) {
         switch_event_unbind(&event_node);
         event_node = NULL;
     }
