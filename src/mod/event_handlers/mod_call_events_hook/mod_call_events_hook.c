@@ -50,8 +50,6 @@ static void send_event_data(call_event_info_t *data) {
         if (post_body) {
             CURLcode res;
             const char *url = "http://localhost:8080/event";  // Replace with your actual endpoint
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
-                                "post %s", post_body);
             curl_easy_setopt(curl, CURLOPT_URL, url);
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_body);
             res = curl_easy_perform(curl);
