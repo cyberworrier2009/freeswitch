@@ -21,6 +21,7 @@ static void free_call_event_info(call_event_info_t *info) {
         switch_safe_free(info->domain);
         switch_safe_free(info->destination_number);
         switch_safe_free(info->call_direction);
+        switch_safe_free(info->caller_number);
         switch_safe_free(info);
     }
 }
