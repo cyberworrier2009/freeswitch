@@ -11,6 +11,7 @@ typedef struct call_event_info {
     char* event;
     char* domain;
     char* destination_number;
+    char* caller_number;
     char* call_direction;
 } call_event_info_t;
 
@@ -34,6 +35,7 @@ char *convert_to_json(call_event_info_t *obj) {
         cJSON_AddStringToObject(data, "event", obj->event ? obj->event : "");
         cJSON_AddStringToObject(data, "destination_number", obj->destination_number ? obj->destination_number : "");
         cJSON_AddStringToObject(data, "direction", obj->call_direction ? obj->call_direction : "");
+        cJSON_AddStringToObject(data, "caller_number", obj->caller_number);
         cJSON_AddItemToObject(root, "data", data);
         json_string = cJSON_Print(root);
         cJSON_Delete(root);
@@ -48,7 +50,8 @@ static void send_event_data(call_event_info_t *data) {
         if (post_body) {
             CURLcode res;
             const char *url = "http://localhost:8080/event";  // Replace with your actual endpoint
-
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
+                                "post %s", post_body);
             curl_easy_setopt(curl, CURLOPT_URL, url);
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_body);
             res = curl_easy_perform(curl);
@@ -72,8 +75,9 @@ static void event_handler(switch_event_t *event) {
 
     if (event_name) {
         const char *domain_name = switch_event_get_header(event, "variable_domain_name");
-        const char *call_direction = switch_event_get_header(event, "variable_direction");
+        const char *call_direction = switch_event_get_header(event, "Caller-Direction");
         const char *callee_number = switch_event_get_header(event, "Caller-Destination-Number");
+        const char *caller_number = switch_event_get_header(event, "Caller-Caller-ID-Number");
 
         if (!domain_name) {
             domain_name = "unknown";
@@ -82,16 +86,23 @@ static void event_handler(switch_event_t *event) {
         if (strcmp(event_name, "CHANNEL_ANSWER") == 0 ||
             strcmp(event_name, "CHANNEL_HANGUP") == 0 ||
             strcmp(event_name, "CHANNEL_CREATE") == 0 ||
-            (strcmp(event_name, "CHANNEL_CALLSTATE") == 0 &&
-             !strcmp(switch_event_get_header(event, "Channel-Call-State"), "RINGING"))) {
+            strcmp(event_name, "CHANNEL_PROGRESS") == 0||
+            strcmp(event_name, "CHANNEL_PROGRESS_MEDIA") == 0){ 
             
             call_event_info_t *call_info = (call_event_info_t*) malloc(sizeof(call_event_info_t));
             if (call_info) {
+               
                 call_info->domain = switch_safe_strdup(domain_name);
                 call_info->destination_number = switch_safe_strdup(callee_number);
                 call_info->event = switch_safe_strdup(event_name);
+                call_info->caller_number = switch_safe_strdup(caller_number);
                 call_info->call_direction = switch_safe_strdup(call_direction);
-
+                if(strcmp(event_name, "CHANNEL_PROGRESS_MEDIA")==0){
+                    call_info->event = switch_safe_strdup("CS_RINGING");
+                }
+                else{
+                    call_info->event =switch_safe_strdup(event_name);
+                }
                 send_event_data(call_info);
                 free_call_event_info(call_info);
             } else {
