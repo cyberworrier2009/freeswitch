@@ -13,6 +13,8 @@ typedef struct call_event_info {
     char* destination_number;
     char* caller_number;
     char* call_direction;
+	char* call_uuid;
+	char* caller_name;
 } call_event_info_t;
 
 static void free_call_event_info(call_event_info_t *info) {
@@ -22,7 +24,9 @@ static void free_call_event_info(call_event_info_t *info) {
         switch_safe_free(info->destination_number);
         switch_safe_free(info->call_direction);
         switch_safe_free(info->caller_number);
-        switch_safe_free(info);
+		switch_safe_free(info->call_uuid);
+  switch_safe_free(info->caller_name);      
+		switch_safe_free(info);
     }
 }
 
@@ -31,15 +35,19 @@ char *convert_to_json(call_event_info_t *obj) {
     cJSON *root = cJSON_CreateObject();
     cJSON *data = cJSON_CreateObject();
     if (root) {
-        cJSON_AddStringToObject(root, "name", obj->event);
+  
+      
+		cJSON_AddStringToObject(root, "name", obj->event);
                 cJSON_AddStringToObject(data, "domain", obj->domain ? obj->domain : "");
         cJSON_AddStringToObject(data, "event", obj->event ? obj->event : "");
         cJSON_AddStringToObject(data, "destination_number", obj->destination_number ? obj->destination_number : "");
         cJSON_AddStringToObject(data, "direction", obj->call_direction ? obj->call_direction : "");
         cJSON_AddStringToObject(data, "caller_number", obj->caller_number);
-        cJSON_AddItemToObject(root, "data", data);
-        json_string = cJSON_Print(root);
-        cJSON_Delete(root);
+		cJSON_AddStringToObject(data, "call_uuid", obj->call_uuid );
+  cJSON_AddStringToObject(data,"caller_name", obj->caller_name); 
+		cJSON_AddItemToObject(root,"data",data);
+		json_string = cJSON_Print(root);
+		cJSON_Delete(root);
     }
     return json_string;
 }
@@ -48,7 +56,7 @@ static void send_event_data(call_event_info_t *data) {
     CURL *curl = curl_easy_init();
     if (curl) {
         char *post_body = convert_to_json(data);
-        if (post_body) {
+		if (post_body) {
             CURLcode res;
             const char *url = "http://localhost:8080/event";  // Replace with your actual endpoint
             curl_easy_setopt(curl, CURLOPT_URL, url);
@@ -77,7 +85,8 @@ static void event_handler(switch_event_t *event) {
         const char *call_direction = switch_event_get_header(event, "Caller-Direction");
         const char *callee_number = switch_event_get_header(event, "Caller-Destination-Number");
         const char *caller_number = switch_event_get_header(event, "Caller-Caller-ID-Number");
-
+		const char *caller_name = switch_event_get_header(event, "Caller-Caller-ID-Name");
+		const char *call_uuid = switch_event_get_header(event, "Caller-Unique-ID");
         if (!domain_name) {
             domain_name = "unknown";
         }
@@ -96,13 +105,15 @@ static void event_handler(switch_event_t *event) {
                 call_info->event = switch_safe_strdup(event_name);
                 call_info->caller_number = switch_safe_strdup(caller_number);
                 call_info->call_direction = switch_safe_strdup(call_direction);
+				call_info->call_uuid = switch_safe_strdup(call_uuid);
+				call_info->caller_name = switch_safe_strdup(caller_name);
                 if(strcmp(event_name, "CHANNEL_PROGRESS_MEDIA")==0){
                     call_info->event = switch_safe_strdup("CS_RINGING");
                 }
                 else{
                     call_info->event =switch_safe_strdup(event_name);
                 }
-                send_event_data(call_info);
+				send_event_data(call_info);
                 free_call_event_info(call_info);
             } else {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for call_info\n");
