@@ -15,6 +15,7 @@ typedef struct call_event_info {
     char* call_direction;
 	char* call_uuid;
 	char* caller_name;
+    char* recording_file_path;
 } call_event_info_t;
 
 static void free_call_event_info(call_event_info_t *info) {
@@ -25,6 +26,7 @@ static void free_call_event_info(call_event_info_t *info) {
         switch_safe_free(info->call_direction);
         switch_safe_free(info->caller_number);
 		switch_safe_free(info->call_uuid);
+        switch_safe_free(info->recording_file_path);
   switch_safe_free(info->caller_name);      
 		switch_safe_free(info);
     }
@@ -44,7 +46,8 @@ char *convert_to_json(call_event_info_t *obj) {
         cJSON_AddStringToObject(data, "direction", obj->call_direction ? obj->call_direction : "");
         cJSON_AddStringToObject(data, "caller_number", obj->caller_number);
 		cJSON_AddStringToObject(data, "call_uuid", obj->call_uuid );
-  cJSON_AddStringToObject(data,"caller_name", obj->caller_name); 
+  cJSON_AddStringToObject(data,"caller_name", obj->caller_name);
+        cJSON_AddStringToObject(data,"recording_file_path", obj->recording_file_path);
 		cJSON_AddItemToObject(root,"data",data);
 		json_string = cJSON_Print(root);
 		cJSON_Delete(root);
@@ -87,6 +90,7 @@ static void event_handler(switch_event_t *event) {
         const char *caller_number = switch_event_get_header(event, "Caller-Caller-ID-Number");
 		const char *caller_name = switch_event_get_header(event, "Caller-Caller-ID-Name");
 		const char *call_uuid = switch_event_get_header(event, "Caller-Unique-ID");
+        const char *recording_file = switch_event_get_header(event, "Record-File-Path");
         if (!domain_name) {
             domain_name = "unknown";
         }
@@ -95,6 +99,7 @@ static void event_handler(switch_event_t *event) {
             strcmp(event_name, "CHANNEL_HANGUP") == 0 ||
             strcmp(event_name, "CHANNEL_CREATE") == 0 ||
             strcmp(event_name, "CHANNEL_PROGRESS") == 0||
+            strcmp(event_name, "RECORD_STOP") == 0||
             strcmp(event_name, "CHANNEL_PROGRESS_MEDIA") == 0){ 
             
             call_event_info_t *call_info = (call_event_info_t*) malloc(sizeof(call_event_info_t));
@@ -112,6 +117,14 @@ static void event_handler(switch_event_t *event) {
                 }
                 else{
                     call_info->event =switch_safe_strdup(event_name);
+                }
+                if(strcmp(event_name, "RECORD_STOP")==0){
+                    if(recording_file){
+                        call_info->recording_file_path = switch_safe_strdup(recording_file);
+                    } 
+                }
+                else{
+                    call_info->recording_file_path = switch_safe_strdup("");
                 }
 				send_event_data(call_info);
                 free_call_event_info(call_info);
