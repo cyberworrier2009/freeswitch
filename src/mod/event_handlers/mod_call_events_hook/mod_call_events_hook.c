@@ -59,9 +59,10 @@ static void send_event_data(call_event_info_t *data) {
     CURL *curl = curl_easy_init();
     if (curl) {
         char *post_body = convert_to_json(data);
-		if (post_body) {
+		
+        if (post_body) {
             CURLcode res;
-            const char *url = "http://localhost:8080/event";  // Replace with your actual endpoint
+            const char *url = "http://localhost:8081/event";  // Replace with your actual endpoint
             curl_easy_setopt(curl, CURLOPT_URL, url);
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_body);
             res = curl_easy_perform(curl);
@@ -69,7 +70,7 @@ static void send_event_data(call_event_info_t *data) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR,
                                   "curl_easy_perform() failed: %s\n",
                                   curl_easy_strerror(res));
-            }
+            } 
 
             free(post_body);
         }
@@ -118,9 +119,10 @@ static void event_handler(switch_event_t *event) {
                 else{
                     call_info->event =switch_safe_strdup(event_name);
                 }
-                if(strcmp(event_name, "RECORD_STOP")==0){
+                if(strcmp(event_name, "RECORD_STOP")==0 && switch_file_exists(recording_file, NULL) == SWITCH_STATUS_SUCCESS){
                     if(recording_file){
                         call_info->recording_file_path = switch_safe_strdup(recording_file);
+                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Recording file path: %s\n", recording_file);
                     } 
                 }
                 else{
@@ -170,7 +172,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_call_events_hook_load) {
     switch_api_interface_t *api_interface;
     *module_interface = switch_loadable_module_create_module_interface(pool, modname);
 
-    SWITCH_ADD_API(api_interface, "call_event_hooks", "Domain specific event hooks", mod_call_events_hook_start_function, "<start>|<stop>");
+    SWITCH_ADD_API(api_interface, "call_events_hook", "Domain specific event hooks", mod_call_events_hook_start_function, "<start>|<stop>");
 
     return SWITCH_STATUS_SUCCESS;
 }
