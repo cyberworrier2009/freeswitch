@@ -116,10 +116,29 @@ static void event_handler(switch_event_t *event) {
                         record_info->domain = switch_safe_strdup(domain_name);
                         record_info->destination_number = switch_safe_strdup(callee_number);
                         record_info->caller_number = switch_safe_strdup(caller_number);
+                        record_info->caller_name = switch_safe_strdup(caller_name);
                         record_info->call_direction = switch_safe_strdup(call_direction); 
                         record_info->recording_file_path = switch_safe_strdup(recording_file);
                         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Recording file path: %s\n", recording_file);
-                        
+                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                            "call_event_info_t:\n"
+                            "  event: %s\n"
+                            "  domain: %s\n"
+                            "  destination_number: %s\n"
+                            "  caller_number: %s\n"
+                            "  call_direction: %s\n"
+                            "  caller_name: %s\n"
+                            "  call_uuid: %s\n"
+                            "  recording_file_path: %s\n",
+                            record_info->event ? record_info->event : "(null)",
+                            record_info->domain ? record_info->domain : "(null)",
+                            record_info->destination_number ? record_info->destination_number : "(null)",
+                            record_info->caller_number ? record_info->caller_number : "(null)",
+                            record_info->call_direction ? record_info->call_direction : "(null)",
+                            record_info->caller_name ? record_info->caller_name : "(null)",
+                            record_info->call_uuid ? record_info->call_uuid : "(null)",
+                            record_info->recording_file_path ? record_info->recording_file_path : "(null)"
+                        );
                         send_event_data(record_info);
                         free_call_event_info(record_info);
                     }
@@ -127,28 +146,31 @@ static void event_handler(switch_event_t *event) {
                         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for record_info\n");
                                        } 
                 }
-                           
-            call_info = (call_event_info_t*) malloc(sizeof(call_event_info_t)); 
-            if (call_info) {
-                call_info->domain = switch_safe_strdup(domain_name);
-                call_info->destination_number = switch_safe_strdup(callee_number);
-                call_info->event = switch_safe_strdup(event_name);
-                call_info->caller_number = switch_safe_strdup(caller_number);
-                call_info->call_direction = switch_safe_strdup(call_direction);
-				call_info->call_uuid = switch_safe_strdup(call_uuid);
-				call_info->caller_name = switch_safe_strdup(caller_name);
-                call_info->recording_file_path = switch_safe_strdup("");
-                if(strcmp(event_name, "CHANNEL_PROGRESS_MEDIA")==0){
-                    call_info->event = switch_safe_strdup("CS_RINGING");
-                }
                 else{
-                    call_info->event =switch_safe_strdup(event_name);
-                }
-                send_event_data(call_info);
-                free_call_event_info(call_info);
+                   call_info = (call_event_info_t*) malloc(sizeof(call_event_info_t)); 
+                    if (call_info) {
+                    call_info->domain = switch_safe_strdup(domain_name);
+                    call_info->destination_number = switch_safe_strdup(callee_number);
+                    call_info->event = switch_safe_strdup(event_name);
+                    call_info->caller_number = switch_safe_strdup(caller_number);
+                    call_info->call_direction = switch_safe_strdup(call_direction);
+                    call_info->call_uuid = switch_safe_strdup(call_uuid);
+                    call_info->caller_name = switch_safe_strdup(caller_name);
+                    call_info->recording_file_path = switch_safe_strdup("");
+                    if(strcmp(event_name, "CHANNEL_PROGRESS_MEDIA")==0){
+                        call_info->event = switch_safe_strdup("CS_RINGING");
+                    }
+                    else{
+                        call_info->event =switch_safe_strdup(event_name);
+                    }
+                    send_event_data(call_info);
+                    free_call_event_info(call_info);
             } else {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for call_info\n");
-            }
+            } 
+                }
+                           
+            
         }
     }
 }
