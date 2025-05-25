@@ -1,12 +1,14 @@
 #include <switch.h>
 #include <curl/curl.h>
 #include <cjson/cJSON.h>
+#include "data_structs/structs.h"
 
 SWITCH_MODULE_LOAD_FUNCTION(mod_call_events_hook_load);
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_call_events_hook_shutdown);
 SWITCH_MODULE_DEFINITION(mod_call_events_hook, mod_call_events_hook_load, mod_call_events_hook_shutdown, NULL);
 
 static switch_event_node_t *event_node = NULL;
+array_list_struct_t *call_recordings = NULL;
 typedef struct call_event_info {
     char* event;
     char* domain;
@@ -87,6 +89,8 @@ static void send_event_data(call_event_info_t *data) {
 static void event_handler(switch_event_t *event) {
     const char *event_name = switch_event_get_header(event, "Event-Name");
     call_event_info_t *call_info = NULL;
+    call_recordings = create_array_list();
+ 
     if (event_name) {
         const char *domain_name = switch_event_get_header(event, "variable_domain_name");
         const char *call_direction = switch_event_get_header(event, "Caller-Direction");
@@ -108,9 +112,10 @@ static void event_handler(switch_event_t *event) {
             strcmp(event_name, "CHANNEL_HANGUP_COMPLETE") == 0 ){ 
             
                 if(strcmp(event_name, "RECORD_STOP")==0 && switch_file_exists(recording_file, NULL) == SWITCH_STATUS_SUCCESS){
+                    
                     call_event_info_t *record_info = (call_event_info_t*) malloc(sizeof(call_event_info_t)); 
                     if(recording_file && record_info){
-
+                        
                         record_info->call_uuid = switch_safe_strdup(call_uuid);
                         record_info->event = switch_safe_strdup(event_name);
                         record_info->domain = switch_safe_strdup(domain_name);
@@ -121,7 +126,7 @@ static void event_handler(switch_event_t *event) {
                         record_info->recording_file_path = switch_safe_strdup(recording_file);
                         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Recording file path: %s\n", recording_file);
                         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-                            "call_event_info_t:\n"
+                            "call_event_info_t struct logging:\n"
                             "  event: %s\n"
                             "  domain: %s\n"
                             "  destination_number: %s\n"
@@ -139,6 +144,8 @@ static void event_handler(switch_event_t *event) {
                             record_info->call_uuid ? record_info->call_uuid : "(null)",
                             record_info->recording_file_path ? record_info->recording_file_path : "(null)"
                         );
+                        
+                        add_array_element(call_recordings, record_info->recording_file_path);
                         send_event_data(record_info);
                         free_call_event_info(record_info);
                     }
@@ -162,6 +169,10 @@ static void event_handler(switch_event_t *event) {
                     }
                     else{
                         call_info->event =switch_safe_strdup(event_name);
+                    }
+
+                    if(strcmp(event_name, "CHANNEL_HANGUP_COMPLETE")== 0 && call_recordings != NULL && array_size(call_recordings)>0){
+                        
                     }
                     send_event_data(call_info);
                     free_call_event_info(call_info);
