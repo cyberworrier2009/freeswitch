@@ -8,7 +8,10 @@ SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_call_events_hook_shutdown);
 SWITCH_MODULE_DEFINITION(mod_call_events_hook, mod_call_events_hook_load, mod_call_events_hook_shutdown, NULL);
 
 static switch_event_node_t *event_node = NULL;
+static switch_hash_t *call_recordings_hash = NULL;
+
 array_list_struct_t *call_recordings = NULL;
+
 typedef struct call_event_info {
     char* event;
     char* domain;
@@ -35,14 +38,40 @@ static void free_call_event_info(call_event_info_t *info) {
 		switch_safe_free(info);
     }
 }
+char * parse_call_recordings(array_list_struct_t *call_recordings){
+    cJSON *root_object = cJSON_CreateObject();
+    cJSON *call_recordings_json = cJSON_CreateArray();
+    char *json_string = NULL;
+    
+    for (int i=0; i<call_recordings->array_size;i++){
+        call_event_info_t *recording_info = (call_event_info_t *) call_recordings->data[i];
+        if(recording_info){
+            cJSON *call_record = cJSON_CreateObject();
+            cJSON_AddItemToObject(call_record,"event", cJSON_CreateString(recording_info->event ? recording_info->event : ""));
+            cJSON_AddItemToObject(call_record,"domain", cJSON_CreateString(recording_info->domain ? recording_info->domain : ""));
+            cJSON_AddItemToObject(call_record,"destination_number", cJSON_CreateString(recording_info->destination_number ? recording_info->destination_number : ""));
+            cJSON_AddItemToObject(call_record,"caller_number", cJSON_CreateString(recording_info->caller_number ? recording_info->caller_number : ""));
+            cJSON_AddItemToObject(call_record,"call_direction", cJSON_CreateString(recording_info->call_direction ? recording_info->call_direction : ""));
+            cJSON_AddItemToObject(call_record,"call_uuid", cJSON_CreateString(recording_info->call_uuid ? recording_info->call_uuid : ""));
+            cJSON_AddItemToObject(call_record,"caller_name", cJSON_CreateString(recording_info->caller_name ? recording_info->caller_name : ""));
+            cJSON_AddItemToObject(call_record,"recording_file_path", cJSON_CreateString(recording_info->recording_file_path ? recording_info->recording_file_path : ""));
+            cJSON_AddItemToArray(call_recordings_json, call_record);
+        }          
+    }
+    cJSON_AddItemToObject(root_object, "event_name", cJSON_CreateString("call_recordings"));
+    cJSON_AddItemToObject(root_object, "call_recordings", call_recordings_json);
+    switch_log_printf(SWITCH_CHANNEL_LOG,SWITCH_LOG_INFO, "Parsed call recordings: %s\n", cJSON_Print(root_object) ? cJSON_Print(root_object) : "null");
+    json_string = cJSON_Print(root_object);
+    cJSON_Delete(root_object);
+   
+    return json_string; 
+}
 
 char *convert_to_json(call_event_info_t *obj) {
     char *json_string = NULL;
     cJSON *root = cJSON_CreateObject();
     cJSON *data = cJSON_CreateObject();
     if (root) {
-  
-      
 		cJSON_AddStringToObject(root, "name", obj->event);
         cJSON_AddStringToObject(data, "domain", obj->domain ? obj->domain : "");
         cJSON_AddStringToObject(data, "event", obj->event ? obj->event : "");
@@ -56,14 +85,12 @@ char *convert_to_json(call_event_info_t *obj) {
 		json_string = cJSON_Print(root);
 		cJSON_Delete(root);
     }
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "JSON String: %s\n", json_string);
     return json_string;
 }
 
-static void send_event_data(call_event_info_t *data) {
+static void send_event_data(char *post_body) {
     CURL *curl = curl_easy_init();
     if (curl) {
-        char *post_body = convert_to_json(data);
 		
         if (post_body) {
             CURLcode res;
@@ -89,8 +116,8 @@ static void send_event_data(call_event_info_t *data) {
 static void event_handler(switch_event_t *event) {
     const char *event_name = switch_event_get_header(event, "Event-Name");
     call_event_info_t *call_info = NULL;
-    call_recordings = create_array_list();
- 
+    char *call_recordings_body = NULL; 
+    char *call_info_body = NULL;
     if (event_name) {
         const char *domain_name = switch_event_get_header(event, "variable_domain_name");
         const char *call_direction = switch_event_get_header(event, "Caller-Direction");
@@ -102,7 +129,10 @@ static void event_handler(switch_event_t *event) {
         if (!domain_name) {
             domain_name = "unknown";
         }
-
+        if(strcmp(event_name, "CHANNEL_CREATE")==0){
+            call_recordings = create_array_list();
+            switch_core_hash_insert(call_recordings_hash, call_uuid, call_recordings);
+        } 
         if (strcmp(event_name, "CHANNEL_ANSWER") == 0 ||
             strcmp(event_name, "CHANNEL_HANGUP") == 0 ||
             strcmp(event_name, "CHANNEL_CREATE") == 0 ||
@@ -139,15 +169,14 @@ static void event_handler(switch_event_t *event) {
                             record_info->domain ? record_info->domain : "(null)",
                             record_info->destination_number ? record_info->destination_number : "(null)",
                             record_info->caller_number ? record_info->caller_number : "(null)",
-                            record_info->call_direction ? record_info->call_direction : "(null)",
+                            record_info->call_direction ?  record_info->call_direction : "(null)",
                             record_info->caller_name ? record_info->caller_name : "(null)",
                             record_info->call_uuid ? record_info->call_uuid : "(null)",
                             record_info->recording_file_path ? record_info->recording_file_path : "(null)"
                         );
-                        
-                        add_array_element(call_recordings, record_info->recording_file_path);
-                        send_event_data(record_info);
-                        free_call_event_info(record_info);
+                     
+                        call_recordings = switch_core_hash_find(call_recordings_hash, call_uuid);
+                        add_array_element(call_recordings, record_info);
                     }
                     else{
                         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for record_info\n");
@@ -171,10 +200,18 @@ static void event_handler(switch_event_t *event) {
                         call_info->event =switch_safe_strdup(event_name);
                     }
 
-                    if(strcmp(event_name, "CHANNEL_HANGUP_COMPLETE")== 0 && call_recordings != NULL && array_size(call_recordings)>0){
-                        
+                    if(strcmp(event_name, "CHANNEL_HANGUP_COMPLETE") == 0){
+                        call_recordings = switch_core_hash_find(call_recordings_hash, call_uuid);
+                        if(call_recordings && call_recordings->array_size > 0){
+                            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "Call recordings found, processing them. Call recordings: %d\n", array_size(call_recordings));
+                            call_recordings_body = parse_call_recordings(call_recordings); 
+                            send_event_data(call_recordings_body);
+                            free_array_list(call_recordings);
+                        }
+                       switch_core_hash_delete(call_recordings_hash, call_uuid); 
                     }
-                    send_event_data(call_info);
+                    call_info_body = convert_to_json(call_info);
+                    send_event_data(call_info_body);
                     free_call_event_info(call_info);
             } else {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Failed to allocate memory for call_info\n");
@@ -220,7 +257,7 @@ SWITCH_STANDARD_API(mod_call_events_hook_start_function) {
 SWITCH_MODULE_LOAD_FUNCTION(mod_call_events_hook_load) {
     switch_api_interface_t *api_interface;
     *module_interface = switch_loadable_module_create_module_interface(pool, modname);
-
+    switch_core_hash_init(&call_recordings_hash);
     SWITCH_ADD_API(api_interface, "call_events_hook", "Domain specific event hooks", mod_call_events_hook_start_function, "<start>|<stop>");
 
     return SWITCH_STATUS_SUCCESS;
